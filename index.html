@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Walkerbay POS | Internal System</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Montserrat:wght@400;500;700&family=Space+Mono&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        deepBlue: '#002B5B',
+                        softWhite: '#F3F4F6',
+                        accentGold: '#C5A059',
+                    },
+                    fontFamily: {
+                        sans: ['Montserrat', 'sans-serif'],
+                        serif: ['Cormorant Garamond', 'serif'],
+                        mono: ['Space Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #C5A059; border-radius: 10px; }
+
+        /* Print Specific Styles */
+        @media print {
+            body * { visibility: hidden; }
+            #printable-receipt, #printable-receipt * { visibility: visible; }
+            #printable-receipt {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 80mm; /* Standard Thermal Paper Width */
+                margin: 0;
+                padding: 0;
+                color: black;
+                background: white;
+            }
+            .no-print { display: none; }
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        /* Tab Transitions */
+        .tab-content { display: none; animation: fadeIn 0.3s ease; }
+        .tab-content.active { display: block; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 h-screen flex overflow-hidden font-sans">
+
+    <!-- SIDEBAR -->
+    <aside class="w-20 lg:w-64 bg-deepBlue text-white flex flex-col justify-between transition-all duration-300 z-20 shadow-2xl">
+        <div>
+            <div class="h-20 flex items-center justify-center border-b border-white/10">
+                <div class="font-serif text-2xl font-bold tracking-widest text-accentGold">WB</div>
+                <span class="hidden lg:block ml-3 font-serif font-bold tracking-widest">POS</span>
+            </div>
+
+            <nav class="mt-8 flex flex-col gap-2 px-2">
+                <button onclick="switchTab('pos')" class="nav-btn bg-white/10 text-accentGold p-3 rounded-lg flex items-center gap-4 transition hover:bg-white/20">
+                    <i class="fas fa-cash-register text-xl w-6 text-center"></i>
+                    <span class="hidden lg:block text-sm font-bold uppercase tracking-widest">Register</span>
+                </button>
+                <button onclick="switchTab('transactions')" class="nav-btn text-gray-400 p-3 rounded-lg flex items-center gap-4 transition hover:bg-white/10 hover:text-white">
+                    <i class="fas fa-history text-xl w-6 text-center"></i>
+                    <span class="hidden lg:block text-sm font-bold uppercase tracking-widest">History</span>
+                </button>
+                <button onclick="switchTab('analytics')" class="nav-btn text-gray-400 p-3 rounded-lg flex items-center gap-4 transition hover:bg-white/10 hover:text-white">
+                    <i class="fas fa-chart-line text-xl w-6 text-center"></i>
+                    <span class="hidden lg:block text-sm font-bold uppercase tracking-widest">Reports</span>
+                </button>
+            </nav>
+        </div>
+
+        <div class="p-4 border-t border-white/10">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-accentGold flex items-center justify-center text-deepBlue font-bold">VO</div>
+                <div class="hidden lg:block">
+                    <p class="text-xs text-gray-400 uppercase">Logged in as</p>
+                    <p class="text-sm font-bold text-white">Victor Olal</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden relative">
+        
+        <!-- Header -->
+        <header class="h-20 bg-white border-b border-gray-200 flex justify-between items-center px-8 shadow-sm z-10">
+            <div>
+                <h2 class="font-serif text-2xl text-deepBlue" id="page-title">Terminal 01</h2>
+                <p class="text-xs text-gray-400 uppercase tracking-widest" id="current-date">Fetching date...</p>
+            </div>
+            <div class="flex gap-4">
+                <button onclick="clearData()" class="text-red-500 text-xs uppercase font-bold hover:underline">Reset System Data</button>
+            </div>
+        </header>
+
+        <!-- VIEW: POS REGISTER -->
+        <div id="view-pos" class="tab-content active h-full flex flex-col lg:flex-row overflow-hidden">
+            <!-- Product Grid -->
+            <div class="flex-1 overflow-y-auto p-6 bg-gray-50">
+                <!-- Categories -->
+                <div class="flex gap-2 overflow-x-auto pb-4 mb-2 sticky top-0 bg-gray-50 z-10">
+                    <button onclick="filterProducts('all')" class="cat-btn bg-deepBlue text-white px-6 py-2 rounded-full text-xs font-bold uppercase shadow-lg">All</button>
+                    <button onclick="filterProducts('accommodation')" class="cat-btn bg-white text-gray-600 border px-6 py-2 rounded-full text-xs font-bold uppercase hover:bg-gray-100">Rooms</button>
+                    <button onclick="filterProducts('food')" class="cat-btn bg-white text-gray-600 border px-6 py-2 rounded-full text-xs font-bold uppercase hover:bg-gray-100">Dining</button>
+                    <button onclick="filterProducts('excursion')" class="cat-btn bg-white text-gray-600 border px-6 py-2 rounded-full text-xs font-bold uppercase hover:bg-gray-100">Excursions</button>
+                </div>
+
+                <!-- Grid -->
+                <div id="product-grid" class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <!-- Products injected via JS -->
+                </div>
+            </div>
+
+            <!-- Cart / Checkout Panel -->
+            <div class="w-full lg:w-96 bg-white border-l border-gray-200 flex flex-col shadow-2xl h-full z-20">
+                <div class="p-4 border-b border-gray-100">
+                    <h3 class="font-serif text-xl text-deepBlue">Current Order</h3>
+                </div>
+                
+                <div id="cart-items" class="flex-1 overflow-y-auto p-4 space-y-3">
+                    <!-- Cart Items injected via JS -->
+                    <div class="text-center mt-10 text-gray-400 text-sm">Cart is empty</div>
+                </div>
+
+                <div class="p-6 bg-gray-50 border-t border-gray-200">
+                    <div class="flex justify-between mb-2 text-sm text-gray-600">
+                        <span>Subtotal</span>
+                        <span id="subtotal-display">KSh 0</span>
+                    </div>
+                    <div class="flex justify-between mb-4 text-sm text-gray-600">
+                        <span>VAT (16%)</span>
+                        <span id="tax-display">KSh 0</span>
+                    </div>
+                    <div class="flex justify-between mb-6 text-2xl font-serif text-deepBlue font-bold">
+                        <span>Total</span>
+                        <span id="total-display">KSh 0</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <button onclick="paymentMethod='CASH'" class="pay-btn bg-deepBlue text-white py-2 rounded text-xs font-bold uppercase border border-deepBlue">Cash</button>
+                        <button onclick="paymentMethod='MPESA'" class="pay-btn bg-white text-deepBlue py-2 rounded text-xs font-bold uppercase border border-gray-300">M-Pesa</button>
+                    </div>
+
+                    <button onclick="processCheckout()" class="w-full bg-accentGold text-white py-4 rounded shadow-lg hover:bg-[#b08d45] transition font-bold uppercase tracking-widest text-sm flex justify-center gap-2">
+                        <span>Checkout</span> <i class="fas fa-arrow-right mt-0.5"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- VIEW: TRANSACTIONS HISTORY -->
+        <div id="view-transactions" class="tab-content h-full p-8 overflow-y-auto">
+            <h3 class="font-serif text-3xl text-deepBlue mb-6">Sales History</h3>
+            <div class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <table class="w-full text-left">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500 font-bold border-b">
+                        <tr>
+                            <th class="p-4">Receipt #</th>
+                            <th class="p-4">Date</th>
+                            <th class="p-4">Payment</th>
+                            <th class="p-4 text-right">Amount</th>
+                            <th class="p-4 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transaction-table-body" class="text-sm">
+                        <!-- Filled by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- VIEW: ANALYTICS -->
+        <div id="view-analytics" class="tab-content h-full p-8 overflow-y-auto">
+            <h3 class="font-serif text-3xl text-deepBlue mb-6">Reports</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-deepBlue text-white p-6 rounded-lg shadow-lg">
+                    <p class="text-accentGold text-xs uppercase font-bold tracking-widest">Total Revenue</p>
+                    <h4 class="text-3xl font-serif mt-2" id="report-revenue">KSh 0</h4>
+                </div>
+                <div class="bg-white text-deepBlue p-6 rounded-lg shadow border border-gray-200">
+                    <p class="text-gray-400 text-xs uppercase font-bold tracking-widest">Total Sales</p>
+                    <h4 class="text-3xl font-serif mt-2" id="report-sales-count">0</h4>
+                </div>
+                <div class="bg-white text-deepBlue p-6 rounded-lg shadow border border-gray-200">
+                    <p class="text-gray-400 text-xs uppercase font-bold tracking-widest">Top Category</p>
+                    <h4 class="text-3xl font-serif mt-2" id="report-top-cat">-</h4>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- HIDDEN RECEIPT TEMPLATE (For Printing) -->
+    <div id="printable-receipt" class="hidden bg-white p-4 font-mono text-xs text-black">
+        <div class="text-center mb-4">
+            <h1 class="font-bold text-xl uppercase font-serif">Walkerbay Hotels</h1>
+            <p>Muhuru Bay, Lake Victoria</p>
+            <p>+254 700 346 672</p>
+            <p>Served by: Victor Olal</p>
+        </div>
+        <div class="border-b-2 border-dashed border-black mb-2"></div>
+        <div class="flex justify-between mb-2">
+            <span id="receipt-date"></span>
+            <span id="receipt-id"></span>
+        </div>
+        <div class="border-b-2 border-dashed border-black mb-2"></div>
+        
+        <table class="w-full mb-4 text-left">
+            <thead>
+                <tr>
+                    <th class="pb-2">Item</th>
+                    <th class="pb-2 text-center">Qty</th>
+                    <th class="pb-2 text-right">Price</th>
+                </tr>
+            </thead>
+            <tbody id="receipt-items">
+                <!-- Items go here -->
+            </tbody>
+        </table>
+
+        <div class="border-t-2 border-dashed border-black pt-2 mb-4">
+            <div class="flex justify-between font-bold text-sm">
+                <span>TOTAL</span>
+                <span id="receipt-total"></span>
+            </div>
+            <div class="flex justify-between text-xs mt-1">
+                <span>Payment Method:</span>
+                <span id="receipt-method"></span>
+            </div>
+        </div>
+        
+        <div class="text-center mt-6">
+            <p>Thank you for your visit!</p>
+            <p>www.walkerbayhotels.co.ke</p>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- 1. DATA STORE ---
+        // Products defined based on your website's rates
+        const products = [
+            { id: 1, name: "Standard Room (Single)", category: "accommodation", price: 1500, icon: "fa-bed" },
+            { id: 2, name: "Standard Room (Double)", category: "accommodation", price: 2000, icon: "fa-bed" },
+            { id: 3, name: "Suite Room (Single)", category: "accommodation", price: 2000, icon: "fa-gem" },
+            { id: 4, name: "Suite Room (Double)", category: "accommodation", price: 2500, icon: "fa-gem" },
+            { id: 5, name: "Bed Only Package", category: "accommodation", price: 6000, icon: "fa-box-open" },
+            
+            { id: 6, name: "Arr. Light Lunch", category: "food", price: 300, icon: "fa-sandwich" },
+            { id: 7, name: "Buffet Breakfast", category: "food", price: 500, icon: "fa-coffee" },
+            { id: 8, name: "Buffet Lunch (Fish)", category: "food", price: 800, icon: "fa-fish" },
+            { id: 9, name: "Buffet Dinner", category: "food", price: 800, icon: "fa-utensils" },
+            { id: 10, name: "Soda / Water", category: "food", price: 100, icon: "fa-bottle-water" },
+            
+            { id: 11, name: "Speedboat Ride", category: "excursion", price: 1500, icon: "fa-ship" },
+            { id: 12, name: "Mugabo Caves", category: "excursion", price: 500, icon: "fa-mountain" },
+            { id: 13, name: "Ongwe Island Trip", category: "excursion", price: 1000, icon: "fa-map-marked" },
+        ];
+
+        // State
+        let cart = [];
+        let paymentMethod = 'CASH';
+        let transactions = JSON.parse(localStorage.getItem('walkerbay_transactions')) || [];
+
+        // --- 2. INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', () => {
+            renderProducts('all');
+            updateDate();
+            loadReports();
+            setInterval(updateDate, 60000); // Update date every minute
+        });
+
+        // --- 3. UI FUNCTIONS ---
+        function updateDate() {
+            const now = new Date();
+            document.getElementById('current-date').innerText = now.toLocaleDateString() + " " + now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        function switchTab(tabName) {
+            // Hide all
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-btn').forEach(el => {
+                el.classList.remove('bg-white/10', 'text-accentGold');
+                el.classList.add('text-gray-400');
+            });
+            
+            // Show selected
+            document.getElementById(`view-${tabName}`).classList.add('active');
+            
+            // Highlight nav (Simplified for demo)
+            if(tabName === 'transactions') loadTransactionsTable();
+            if(tabName === 'analytics') loadReports();
+        }
+
+        function filterProducts(category) {
+            // Highlight Button
+            document.querySelectorAll('.cat-btn').forEach(btn => {
+                btn.classList.remove('bg-deepBlue', 'text-white');
+                btn.classList.add('bg-white', 'text-gray-600', 'border');
+            });
+            event.target.classList.remove('bg-white', 'text-gray-600', 'border');
+            event.target.classList.add('bg-deepBlue', 'text-white');
+
+            renderProducts(category);
+        }
+
+        function renderProducts(filter) {
+            const grid = document.getElementById('product-grid');
+            grid.innerHTML = '';
+
+            const filtered = filter === 'all' ? products : products.filter(p => p.category === filter);
+
+            filtered.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition cursor-pointer group';
+                card.onclick = () => addToCart(p.id);
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <i class="fas ${p.icon} text-gray-300 text-2xl group-hover:text-accentGold transition"></i>
+                        <span class="text-xs font-bold bg-gray-100 text-gray-600 px-2 py-1 rounded">KSh ${p.price.toLocaleString()}</span>
+                    </div>
+                    <h4 class="text-sm font-bold text-deepBlue leading-tight">${p.name}</h4>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // --- 4. CART LOGIC ---
+        function addToCart(id) {
+            const product = products.find(p => p.id === id);
+            const existing = cart.find(item => item.id === id);
+
+            if (existing) {
+                existing.qty++;
+            } else {
+                cart.push({ ...product, qty: 1 });
+            }
+            renderCart();
+        }
+
+        function updateQty(id, change) {
+            const item = cart.find(i => i.id === id);
+            item.qty += change;
+            if (item.qty <= 0) cart = cart.filter(i => i.id !== id);
+            renderCart();
+        }
+
+        function renderCart() {
+            const container = document.getElementById('cart-items');
+            container.innerHTML = '';
+            
+            let total = 0;
+
+            if(cart.length === 0) {
+                container.innerHTML = '<div class="h-full flex flex-col items-center justify-center text-gray-300"><i class="fas fa-basket-shopping text-4xl mb-2"></i><p class="text-xs uppercase font-bold">Empty Cart</p></div>';
+            } else {
+                cart.forEach(item => {
+                    const lineTotal = item.price * item.qty;
+                    total += lineTotal;
+                    
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between items-center text-sm';
+                    div.innerHTML = `
+                        <div class="flex-1">
+                            <div class="font-bold text-gray-700">${item.name}</div>
+                            <div class="text-xs text-gray-400">@ ${item.price}</div>
+                        </div>
+                        <div class="flex items-center gap-3 bg-gray-100 rounded px-2 py-1">
+                            <button onclick="updateQty(${item.id}, -1)" class="text-gray-500 hover:text-red-500 font-bold">-</button>
+                            <span class="font-bold w-4 text-center">${item.qty}</span>
+                            <button onclick="updateQty(${item.id}, 1)" class="text-gray-500 hover:text-green-500 font-bold">+</button>
+                        </div>
+                        <div class="w-16 text-right font-bold text-deepBlue">${lineTotal.toLocaleString()}</div>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+
+            const tax = total * 0.16;
+            document.getElementById('subtotal-display').innerText = `KSh ${(total - tax).toLocaleString(undefined, {maximumFractionDigits:0})}`;
+            document.getElementById('tax-display').innerText = `KSh ${tax.toLocaleString(undefined, {maximumFractionDigits:0})}`;
+            document.getElementById('total-display').innerText = `KSh ${total.toLocaleString()}`;
+        }
+
+        // --- 5. CHECKOUT & PRINTING ---
+        function processCheckout() {
+            if (cart.length === 0) return alert("Cart is empty");
+
+            const total = cart.reduce((acc, item) => acc + (item.price * item.qty), 0);
+            const receiptId = 'WB-' + Date.now().toString().slice(-6);
+            
+            // Create Transaction Record
+            const transaction = {
+                id: receiptId,
+                date: new Date().toISOString(),
+                items: [...cart],
+                total: total,
+                method: paymentMethod,
+                cashier: "Victor Olal"
+            };
+
+            // Save to Storage
+            transactions.unshift(transaction);
+            localStorage.setItem('walkerbay_transactions', JSON.stringify(transactions));
+
+            // Print Receipt
+            printReceipt(transaction);
+
+            // Reset
+            cart = [];
+            renderCart();
+            alert("Transaction Successful! Printing Receipt...");
+        }
+
+        function printReceipt(transaction) {
+            // Fill Hidden Receipt Template
+            document.getElementById('receipt-id').innerText = `Ref: ${transaction.id}`;
+            document.getElementById('receipt-date').innerText = new Date(transaction.date).toLocaleString();
+            document.getElementById('receipt-method').innerText = transaction.method;
+            
+            const tbody = document.getElementById('receipt-items');
+            tbody.innerHTML = '';
+            
+            transaction.items.forEach(item => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="pb-1">${item.name}</td>
+                        <td class="pb-1 text-center">${item.qty}</td>
+                        <td class="pb-1 text-right">${(item.price * item.qty).toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('receipt-total').innerText = `KSh ${transaction.total.toLocaleString()}`;
+
+            // Trigger Print
+            window.print();
+        }
+
+        function reprint(id) {
+            const tx = transactions.find(t => t.id === id);
+            if(tx) printReceipt(tx);
+        }
+
+        // --- 6. HISTORY & ANALYTICS ---
+        function loadTransactionsTable() {
+            const tbody = document.getElementById('transaction-table-body');
+            tbody.innerHTML = '';
+            
+            transactions.forEach(tx => {
+                const row = document.createElement('tr');
+                row.className = 'border-b hover:bg-gray-50';
+                row.innerHTML = `
+                    <td class="p-4 font-mono text-xs">${tx.id}</td>
+                    <td class="p-4 text-gray-500">${new Date(tx.date).toLocaleDateString()}</td>
+                    <td class="p-4"><span class="bg-gray-100 px-2 py-1 rounded text-xs font-bold">${tx.method}</span></td>
+                    <td class="p-4 text-right font-bold">KSh ${tx.total.toLocaleString()}</td>
+                    <td class="p-4 text-center">
+                        <button onclick="reprint('${tx.id}')" class="text-deepBlue hover:text-accentGold"><i class="fas fa-print"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function loadReports() {
+            const totalRevenue = transactions.reduce((sum, tx) => sum + tx.total, 0);
+            document.getElementById('report-revenue').innerText = `KSh ${totalRevenue.toLocaleString()}`;
+            document.getElementById('report-sales-count').innerText = transactions.length;
+
+            // Simple Logic to find top category
+            let catCounts = {};
+            transactions.forEach(tx => {
+                tx.items.forEach(item => {
+                    catCounts[item.category] = (catCounts[item.category] || 0) + 1;
+                });
+            });
+            
+            let topCat = Object.keys(catCounts).reduce((a, b) => catCounts[a] > catCounts[b] ? a : b, '-');
+            document.getElementById('report-top-cat').innerText = topCat.charAt(0).toUpperCase() + topCat.slice(1);
+        }
+
+        function clearData() {
+            if(confirm("Are you sure? This will delete all sales history.")) {
+                localStorage.removeItem('walkerbay_transactions');
+                transactions = [];
+                location.reload();
+            }
+        }
+    </script>
+</body>
+</html>
